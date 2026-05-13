@@ -1,0 +1,28 @@
+# Example driftwatch manifest
+# Place this file (or a copy) alongside your container definitions.
+# driftwatch will compare these specs against live running containers.
+
+version: "1"
+
+containers:
+  - name: api
+    image: myrepo/api:v2.0.1
+    restartPolicy: always
+    env:
+      LOG_LEVEL: info
+      DB_HOST: postgres:5432
+    ports:
+      - "8080:8080"
+    labels:
+      app: api
+      env: production
+
+  - name: worker
+    image: myrepo/worker:v1.4.0
+    restartPolicy: on-failure
+    env:
+      QUEUE_URL: amqp://rabbitmq:5672
+      CONCURRENCY: "4"
+    labels:
+      app: worker
+      env: production
