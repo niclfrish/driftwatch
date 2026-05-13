@@ -1,0 +1,12 @@
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.out
+*.prof
+Desktop.ini
+.env
+vendor/
+*.test
+.DS_Store
