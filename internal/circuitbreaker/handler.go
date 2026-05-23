@@ -5,40 +5,45 @@ import (
 	"net/http"
 )
 
-type statusEntry struct {
-	Container string `json:"container"`
-	State     string `json:"state"`
-	Failures  int    `json:"failures"`
+type circuitStatus struct {
+	State    string `json:"state"`
+	Failures int    `json:"failures"`
 }
 
-// Handler returns an http.HandlerFunc that exposes circuit breaker states
-// for all known keys as a JSON array.
-func Handler(b *Breaker) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		b.mu.Lock()
-		entries := make([]statusEntry, 0, len(b.states))
-		for key, state := range b.states {
-			entries = append(entries, statusEntry{
-				Container: key,
-				State:     state.String(),
-				Failures:  b.failures[key],
-			})
+type statusResponse struct {
+	Circuits map[string]circuitStatus `json:"circuits"`
+}
+
+// Handler returns an http.Handler that exposes the current state of all
+// circuit breakers tracked by cb. An optional ?container= query parameter
+// filters the response to a single circuit.
+func Handler(cb *CircuitBreaker) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		filter := r.URL.Query().Get("container")
+
+		cb.mu.RLock()
+		defer cb.mu.RUnlock()
+
+		circuits := make(map[string]circuitStatus)
+		for key, entry := range cb.entries {
+			if filter != "" && key != filter {
+				continue
+			}
+			state := "closed"
+			switch entry.state {
+			case stateOpen:
+				state = "open"
+			case stateHalfOpen:
+				state = "half-open"
+			}
+			circuits[key] = circuitStatus{
+				State:    state,
+				Failures: entry.failures,
+			}
 		}
-		b.mu.Unlock()
 
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(entries); err != nil {
-			http.Error(w, "encode error", http.StatusInternalServerError)
-		}
-	}
-}
-
-// Reset clears all state for key, returning the circuit to closed with zero
-// failures. It is exposed via DELETE /circuitbreaker/{container}.
-func (b *Breaker) Reset(key string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	delete(b.failures, key)
-	delete(b.states, key)
-	delete(b.openedAt, key)
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(statusResponse{Circuits: circuits})
+	})
 }
